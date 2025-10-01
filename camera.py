@@ -1,7 +1,3 @@
-import pygame
-
-
-
 class Viewport:
     def __init__(self, screen_width, screen_height):
         self.x = 0
@@ -27,3 +23,4 @@ class Viewport:
             and y + height > self.y
             and y < self.y + self.height
         )
+
