@@ -1,3 +1,18 @@
+"""
+Definição de todas as entidades do jogo: Jogador, NPCs e Itens.
+
+Este arquivo contém a lógica para o comportamento, atualização e renderização
+de cada tipo de entidade.
+
+REQUISITOS ATENDIDOS:
+- Implementação de inimigos (NPCs) (classes NPC, Spider, Droid).
+- Implementação de caixas de primeiros socorros e munição (classe Item).
+- Comportamento de NPC: ir em direção ao jogador (NPC.update).
+- Comportamento de NPC: causar dano ao jogador por sobreposição (NPC.attack_player).
+- Uso de item de saúde (➕) para recuperar vida (Player.use_health_item).
+- Uso de item de munição (⚡) para causar dano em área (Player.use_ammo_item).
+- Morte de personagem (jogador ou NPC) com saúde não positiva (Player.update, NPC.take_damage).
+"""
 import math
 import os
 import random
@@ -28,6 +43,11 @@ from settings import (
 # PLAYER
 # ────────────────────
 class Player:
+    """
+    Representa o personagem controlado pelo usuário.
+
+    Contém a lógica de movimento, saúde, inventário de itens e animações.
+    """
     def __init__(self, x, y):
         self.is_alive = True
 
@@ -135,15 +155,21 @@ class Player:
 
         self._animate()
 
+        # REQUISITO: "Qualquer personagem ... com saúde não positiva, morre"
         if self.health <= 0:
             self.is_alive = False
 
     # ---------- utilidades ----------
     def take_damage(self, dmg):  # recebido de NPC
+        """Reduz a saúde do jogador ao receber dano."""
         if self.is_alive:
             self.health = max(0, self.health - dmg)
 
     def use_health_item(self):
+        """
+        REQUISITO: "Ao usar ➕, a saúde do jogador é recuperada"
+        Consome um item de vida para restaurar a saúde.
+        """
         if self.health_items and self.health < self.max_health:
             self.health_items -= 1
             self.health = min(self.max_health, self.health + HEALTH_RESTORE)
@@ -151,6 +177,10 @@ class Player:
         return False
 
     def use_ammo_item(self, npcs):
+        """
+        REQUISITO: "Ao usar ⚡, os inimigos ao redor sofrem danos"
+        Consome um item de munição para causar dano a todos os NPCs em um raio.
+        """
         if not self.ammo_items:
             return 0
         self.ammo_items -= 1
@@ -186,6 +216,11 @@ class Player:
 # NPC base
 # ────────────────────
 class NPC:
+    """
+    Classe base para todos os Inimigos (Non-Player Characters).
+
+    Define o comportamento padrão, como seguir o jogador e atacar.
+    """
     def __init__(self, x, y, area, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.rect = pygame.Rect(x, y, NPC_SIZE, NPC_SIZE)
@@ -197,6 +232,10 @@ class NPC:
         )
 
     def update(self, dt, player):
+        """
+        REQUISITO: "Ir em direção ao jogador"
+        Move o NPC na direção do jogador, mas confinado à sua própria área.
+        """
         if not self.is_alive:
             return
         # mover em direção ao player
@@ -205,7 +244,7 @@ class NPC:
         dist = math.hypot(dx, dy) or 1
         self.rect.x += self.speed * dt * dx / dist
         self.rect.y += self.speed * dt * dy / dist
-        self.rect.clamp_ip(self.area_rect)
+        self.rect.clamp_ip(self.area_rect) # Garante que o NPC não saia da sua área
         self._animate()
         if not self.area_rect.collidepoint(player.rect.center):
             return
@@ -214,6 +253,10 @@ class NPC:
             self.damage_cooldown -= dt
 
     def attack_player(self, player):
+        """
+        REQUISITO: "Enquanto houver sobreposição com o jogador, haverá danos à saúde do jogador"
+        Verifica a colisão e causa dano ao jogador se o cooldown permitir.
+        """
         if self.is_alive and self.damage_cooldown <= 0:
             if player.get_rect().colliderect(self.rect):
                 player.take_damage(self.damage)
@@ -234,6 +277,10 @@ class NPC:
             pygame.draw.rect(surface, GREEN, (bar_x, bar_y, self.rect.width * pct, 4))
 
     def take_damage(self, dmg):
+        """
+        REQUISITO: "Qualquer personagem ... com saúde não positiva, morre"
+        Reduz a saúde do NPC e o marca como morto se a saúde chegar a zero.
+        """
         if self.is_alive:
             self.health -= dmg
             if self.health <= 0:
@@ -249,6 +296,7 @@ class NPC:
 # SPIDER
 # ────────────────────
 class Spider(NPC):
+    """Uma aranha rápida, mas com menos vida e dano."""
     def __init__(self, x, y, area):
         super().__init__(x, y, area)
         self.spritesheet = SpriteSheet("assets/SpiderSheet.png")
@@ -299,6 +347,7 @@ class Spider(NPC):
 # DROID
 # ────────────────────
 class Droid(NPC):
+    """Um droid mais lento, porém mais resistente e com mais dano."""
     def __init__(self, x, y, area):
         super().__init__(x, y, area)
         self.spritesheet = SpriteSheet("assets/DroidSheet.png")
@@ -338,6 +387,11 @@ class Droid(NPC):
 # ITEM
 # ────────────────────
 class Item:
+    """
+    Representa um item coletável no mundo (vida ou munição).
+
+    REQUISITOS: "caixas de primeiros socorros", "caixas de munição"
+    """
     def __init__(self, x, y, item_type):
         self.item_type = item_type
 

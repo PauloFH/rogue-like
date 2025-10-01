@@ -1,3 +1,17 @@
+"""
+Gerenciamento do Mundo e das Áreas
+
+Este arquivo define a estrutura do mundo do jogo, que é dividido em uma malha (grid)
+de áreas. Ele controla quais áreas estão ativas e o que acontece dentro delas.
+
+REQUISITOS ATENDIDOS:
+- Implementação de um nível com 9 áreas em uma malha (WorldGrid).
+- Geração de estado inicial aleatório (Area.load).
+- Ativação de áreas vizinhas com base na proximidade (WorldGrid.update_active_areas).
+- Limite de, no máximo, 4 áreas ativas (WorldGrid.update_active_areas).
+- Atualização apenas de NPCs em áreas ativas (Area.update).
+- Carregamento/liberação dinâmica de áreas (Area.load/unload).
+"""
 import pygame
 import math
 import random
@@ -18,6 +32,13 @@ from sprites import SpriteSheet
 
 
 class Area:
+    """
+    Representa uma única área (célula) na malha do mundo.
+
+    Cada área contém seus próprios NPCs, itens e elementos de cenário.
+    Ela pode ser carregada (em memória) e ativada (lógica em execução)
+    dinamicamente para otimizar o desempenho.
+    """
     def __init__(self, grid_x, grid_y):
         self.grid_x = grid_x
         self.grid_y = grid_y
@@ -33,6 +54,11 @@ class Area:
         self.items = []
 
     def load(self):
+        """
+        Carrega os dados da área, gerando NPCs e itens aleatoriamente.
+        Este método cumpre o requisito de "gerado aleatoriamente".
+        O bônus de "carregadas / liberadas dinamicamente" é implementado aqui.
+        """
         if self.is_loaded:
             return
         try:
@@ -83,6 +109,8 @@ class Area:
         except (pygame.error, FileNotFoundError):
             print("Aviso: Não foi possível carregar os spritesheets de 'marks'.")
 
+        # REQUISITO: "inimigos (NPCs)"
+        # Gera NPCs em posições aleatórias dentro da área.
         for _ in range(random.randint(5, 15)):
             x = self.world_x + random.randint(50, AREA_WIDTH - 50)
             y = self.world_y + random.randint(50, AREA_HEIGHT - 50)
@@ -92,11 +120,14 @@ class Area:
             else:
                 self.npcs.append(Droid(x, y, self))
 
+        # REQUISITOS: "caixas de primeiros socorros" e "caixas de munição"
+        # Gera itens de vida.
         for _ in range(random.randint(2, 5)):
             x = self.world_x + random.randint(25, AREA_WIDTH - 25)
             y = self.world_y + random.randint(25, AREA_HEIGHT - 25)
             self.items.append(Item(x, y, "health"))
 
+        # Gera itens de munição.
         for _ in range(random.randint(1, 3)):
             x = self.world_x + random.randint(25, AREA_WIDTH - 25)
             y = self.world_y + random.randint(25, AREA_HEIGHT - 25)
@@ -111,25 +142,37 @@ class Area:
         return math.sqrt((player_x - center_x) ** 2 + (player_y - center_y) ** 2)
 
     def unload(self):
+        """
+        Libera os recursos da área da memória.
+        Parte do requisito bônus de gerenciamento dinâmico de memória.
+        """
         self.npcs.clear()
         self.items.clear()
         self.is_loaded = False
 
     def activate(self):
+        """Ativa a área, carregando-a se necessário."""
         if not self.is_loaded:
             self.load()
         self.is_active = True
 
     def deactivate(self):
+        """Desativa a área."""
         self.is_active = False
 
     def update(self, dt, player):
+        """
+        Atualiza a lógica dos NPCs na área.
+        REQUISITO: "Apenas os NPCs das áreas ativas serão atualizados"
+        Este método só é chamado pela WorldGrid para áreas ativas.
+        """
         if not self.is_active:
             return
         for npc in self.npcs:
             npc.update(dt, player)
 
     def draw(self, surface, viewport):
+        """Desenha o conteúdo da área se estiver visível na viewport."""
         if not self.is_loaded:
             return
 
@@ -174,6 +217,12 @@ class Area:
 
 
 class WorldGrid:
+    """
+    Gerencia a coleção de todas as áreas do jogo, formando a malha 3x3.
+
+    REQUISITO: "Implementar um nível de jogo contendo 9 áreas organizadas em uma malha"
+    Esta classe cria e armazena as 9 áreas em um dicionário.
+    """
     def __init__(self):
         self.areas = {}
         self.active_areas = set()
@@ -182,35 +231,54 @@ class WorldGrid:
                 self.areas[(x, y)] = Area(x, y)
 
     def update_active_areas(self, player_x, player_y):
+        """
+        Determina quais áreas devem estar ativas com base na proximidade do jogador.
+
+        REQUISITOS:
+        - "Uma área vizinha à atual só ficará ativa quando o personagem chegar 'próximo' a sua borda"
+        - "Haverão, no máximo, 4 áreas ativas"
+        - BÔNUS: "Ter as áreas carregadas / liberadas dinamicamente da memória"
+        """
         new_active_areas = set()
         distances = []
+        # 1. Calcula a distância de todas as áreas para o jogador.
         for coord, area in self.areas.items():
             distance = area.get_distance_to_player(player_x, player_y)
             distances.append((distance, coord, area))
 
+        # 2. Ordena as áreas pela distância e seleciona as candidatas a ativas.
         distances.sort()
         for i, (distance, coord, area) in enumerate(distances):
             if i < MAX_ACTIVE_AREAS and distance < AREA_ACTIVATION_DISTANCE * 2:
                 new_active_areas.add(coord)
 
+        # 3. Desativa e descarrega áreas que não estão mais no conjunto ativo.
         for coord in self.active_areas - new_active_areas:
             self.areas[coord].deactivate()
             self.areas[coord].unload()
 
+        # 4. Ativa (e carrega, se necessário) novas áreas.
         for coord in new_active_areas - self.active_areas:
             self.areas[coord].activate()
 
         self.active_areas = new_active_areas
 
     def update(self, dt, player):
+        """Atualiza apenas as áreas ativas."""
         for coord in self.active_areas:
             self.areas[coord].update(dt, player)
 
     def draw(self, surface, viewport):
+        """Desenha todas as áreas (visíveis)."""
+        # A própria área/entidade decide se deve ser desenhada com base na viewport.
         for area in self.areas.values():
             area.draw(surface, viewport)
 
     def get_active_entities(self):
+        """
+        Retorna uma lista de todos os NPCs e itens contidos APENAS nas áreas ativas.
+        Usado para colisões e interações globais.
+        """
         npcs = []
         items = []
         for coord in self.active_areas:

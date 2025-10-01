@@ -1,3 +1,17 @@
+"""
+Arquivo Principal do Jogo
+
+Este arquivo contém a classe `Game`, que é responsável por inicializar o Pygame,
+gerenciar o loop principal do jogo, os estados (menu, jogando, fim de jogo),
+processar eventos, atualizar a lógica e desenhar tudo na tela.
+
+REQUISITOS COORDENADOS AQUI:
+- O loop principal em `run()` gerencia a transição entre os estados do jogo.
+- A sobrevivência por tempo (`GAME_DURATION`) é verificada em `update()`.
+- A morte do jogador (`player.is_alive`) é verificada em `update()` para mudar o estado para "game_over".
+- A coleta de itens e o dano de NPCs são iniciados em `check_collisions()`.
+- O uso de itens pelo jogador é tratado em `handle_gameplay_events()`.
+"""
 import pygame
 import sys
 import time
@@ -24,7 +38,11 @@ from entities import Player
 
 
 class Game:
+    """
+    Classe principal que orquestra todo o jogo.
+    """
     def __init__(self):
+        """Inicializa o Pygame, a janela e os componentes principais."""
         pygame.init()
         self.screen_width = SCREEN_WIDTH
         self.screen_height = SCREEN_HEIGHT
@@ -45,7 +63,7 @@ class Game:
         self.instructions_font = pygame.font.Font(None, 36)
         self.running = True
         self.ammo_effect = None
-        self.game_state = "start_screen"
+        self.game_state = "start_screen"  # Máquina de estados: start_screen, playing, game_over, win_screen
 
         try:
             self.background_tile = pygame.image.load("assets/space.png").convert()
@@ -73,8 +91,10 @@ class Game:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
+                # REQUISITO: "Ao usar ➕, a saúde do jogador é recuperada"
                 elif event.key == pygame.K_h:
                     self.player.use_health_item()
+                # REQUISITO: "Ao usar ⚡, os inimigos ao redor sofrem danos"
                 elif event.key == pygame.K_SPACE:
                     npcs, _ = self.world_grid.get_active_entities()
                     if self.player.use_ammo_item(npcs):
@@ -132,9 +152,12 @@ class Game:
             if self.ammo_effect["timer"] <= 0:
                 self.ammo_effect = None
 
+        # REQUISITO: "Qualquer personagem ... com saúde não positiva, morre"
         if not self.player.is_alive:
             self.game_state = "game_over"
             return
+        
+        # REQUISITO: "Sobreviver durante um determinado tempo"
         if time.time() - self.game_start_time >= GAME_DURATION:
             self.game_state = "win_screen"
             return
@@ -147,17 +170,26 @@ class Game:
         self.check_collisions()
 
     def check_collisions(self):
+        """
+        Verifica e lida com colisões entre o jogador, NPCs e itens.
+        """
         if not self.player.is_alive:
             return
         npcs, items = self.world_grid.get_active_entities()
         player_rect = self.player.get_rect()
+        
+        # REQUISITO: "Enquanto houver sobreposição com o jogador, haverá danos"
         for npc in npcs:
             if npc.is_alive:
                 npc.attack_player(self.player)
+
+        # REQUISITO: "O jogador pode coletar itens de saúde (➕) e munição (⚡)"
         for item in items:
             if not item.collected and player_rect.colliderect(item.get_rect()):
                 item.collected = True
                 if item.item_type == "health":
+                    # No original, o item de vida era consumido diretamente aqui.
+                    # A lógica de ter um inventário e usar com a tecla 'H' é mais comum.
                     self.player.health = min(
                         self.player.max_health, self.player.health + HEALTH_RESTORE
                     )
@@ -217,6 +249,7 @@ class Game:
             )
 
     def draw_ui(self):
+        """Desenha a Interface do Usuário (tempo, vida, itens)."""
         elapsed_time = time.time() - self.game_start_time
         remaining_time = max(0, GAME_DURATION - elapsed_time)
         texts = [
@@ -229,6 +262,7 @@ class Game:
             self.screen.blit(surface, (10, 10 + i * 30))
 
     def draw_start_screen(self):
+        """Desenha a tela inicial."""
         self.draw_background()
         title_surf = self.title_font.render("RogueLike 9 Areas", True, WHITE)
         inst_surf = self.instructions_font.render(
@@ -244,6 +278,7 @@ class Game:
         self.screen.blit(inst_surf, inst_rect)
 
     def draw_end_screen(self, title, title_color, instruction):
+        """Desenha as telas de Game Over ou Vitória."""
         self.draw_gameplay()
         overlay = pygame.Surface(
             (self.screen_width, self.screen_height), pygame.SRCALPHA
@@ -290,6 +325,7 @@ class Game:
         sys.exit()
 
     def draw_minimap(self):
+        """Desenha um minimapa mostrando a posição do jogador e as áreas ativas."""
         if not hasattr(self, "player"):
             return  # Não desenha se o jogo não começou
         cell_size, padding, border_size = 20, 4, 2
