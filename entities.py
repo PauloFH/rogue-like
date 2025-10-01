@@ -7,12 +7,13 @@ de cada tipo de entidade.
 REQUISITOS ATENDIDOS:
 - Implementação de inimigos (NPCs) (classes NPC, Spider, Droid).
 - Implementação de caixas de primeiros socorros e munição (classe Item).
-- Comportamento de NPC: ir em direção ao jogador (NPC.update).
+- Comportamento de NPC: ir em direção ao jogador (NPC.update com A*).
 - Comportamento de NPC: causar dano ao jogador por sobreposição (NPC.attack_player).
 - Uso de item de saúde (➕) para recuperar vida (Player.use_health_item).
 - Uso de item de munição (⚡) para causar dano em área (Player.use_ammo_item).
 - Morte de personagem (jogador ou NPC) com saúde não positiva (Player.update, NPC.take_damage).
 """
+
 import math
 import os
 import random
@@ -34,9 +35,13 @@ from settings import (
     NPC_HEALTH,
     NPC_SPEED,
     NPC_DAMAGE,
-    ITEM_SIZE,  # parece não usado, mas mantive
+    ITEM_SIZE,
     YELLOW,
 )
+from utils.pathfinding import astar
+
+# Constante para o tamanho da grade de pathfinding. Células de 32x32 pixels.
+PATHFINDING_GRID_SIZE = 32
 
 
 # ────────────────────
@@ -45,9 +50,9 @@ from settings import (
 class Player:
     """
     Representa o personagem controlado pelo usuário.
-
     Contém a lógica de movimento, saúde, inventário de itens e animações.
     """
+
     def __init__(self, x, y):
         self.is_alive = True
 
@@ -155,21 +160,15 @@ class Player:
 
         self._animate()
 
-        # REQUISITO: "Qualquer personagem ... com saúde não positiva, morre"
         if self.health <= 0:
             self.is_alive = False
 
     # ---------- utilidades ----------
-    def take_damage(self, dmg):  # recebido de NPC
-        """Reduz a saúde do jogador ao receber dano."""
+    def take_damage(self, dmg):
         if self.is_alive:
             self.health = max(0, self.health - dmg)
 
     def use_health_item(self):
-        """
-        REQUISITO: "Ao usar ➕, a saúde do jogador é recuperada"
-        Consome um item de vida para restaurar a saúde.
-        """
         if self.health_items and self.health < self.max_health:
             self.health_items -= 1
             self.health = min(self.max_health, self.health + HEALTH_RESTORE)
@@ -177,10 +176,6 @@ class Player:
         return False
 
     def use_ammo_item(self, npcs):
-        """
-        REQUISITO: "Ao usar ⚡, os inimigos ao redor sofrem danos"
-        Consome um item de munição para causar dano a todos os NPCs em um raio.
-        """
         if not self.ammo_items:
             return 0
         self.ammo_items -= 1
@@ -202,7 +197,6 @@ class Player:
         sx, sy = viewport.world_to_screen(self.rect.x, self.rect.y)
         surface.blit(self.image, (sx, sy))
 
-        # barra de vida
         pct = self.health / self.max_health
         bar_x, bar_y = sx, sy - 10
         pygame.draw.rect(surface, RED, (bar_x, bar_y, self.rect.width, 5))
@@ -217,50 +211,130 @@ class Player:
 # ────────────────────
 class NPC:
     """
-    Classe base para todos os Inimigos (Non-Player Characters).
-
-    Define o comportamento padrão, como seguir o jogador e atacar.
+    Classe base para Inimigos. Agora com lógica de pathfinding A*.
     """
+
     def __init__(self, x, y, area, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.rect = pygame.Rect(x, y, NPC_SIZE, NPC_SIZE)
         self.is_alive = True
-        self.damage_cooldown = 2.0  # segundos
+        self.damage_cooldown = 1
         self.area = area
         self.area_rect = pygame.Rect(
             area.world_x, area.world_y, AREA_WIDTH, AREA_HEIGHT
         )
+        # Atributos para o pathfinding
+        self.path = []
+        self.path_recalculation_time = 1.0  # Recalcula o caminho a cada 1s
+        self.path_timer = 0.0
 
-    def update(self, dt, player):
+    def _recalculate_path(self, player, obstacles):
+        """Calcula um novo caminho A* para o jogador, evitando obstáculos."""
+        # 1. Define a grade e os nós de início/fim
+        grid_width = self.area_rect.width // PATHFINDING_GRID_SIZE
+        grid_height = self.area_rect.height // PATHFINDING_GRID_SIZE
+
+        # Converte coordenadas do mundo para coordenadas da grade local da área
+        start_node = (
+            (self.rect.centerx - self.area_rect.x) // PATHFINDING_GRID_SIZE,
+            (self.rect.centery - self.area_rect.y) // PATHFINDING_GRID_SIZE,
+        )
+        end_node = (
+            (player.rect.centerx - self.area_rect.x) // PATHFINDING_GRID_SIZE,
+            (player.rect.centery - self.area_rect.y) // PATHFINDING_GRID_SIZE,
+        )
+
+        # Garante que os nós estejam dentro dos limites da grade
+        start_node = (
+            max(0, min(start_node[0], grid_width - 1)),
+            max(0, min(start_node[1], grid_height - 1)),
+        )
+        end_node = (
+            max(0, min(end_node[0], grid_width - 1)),
+            max(0, min(end_node[1], grid_height - 1)),
+        )
+
+        # 2. Define as células bloqueadas (outros NPCs)
+        obstacle_rects = [obs.rect for obs in obstacles]
+
+        def is_blocked(gx, gy):
+            cell_rect = pygame.Rect(
+                self.area_rect.x + gx * PATHFINDING_GRID_SIZE,
+                self.area_rect.y + gy * PATHFINDING_GRID_SIZE,
+                PATHFINDING_GRID_SIZE,
+                PATHFINDING_GRID_SIZE,
+            )
+            return any(cell_rect.colliderect(obs_rect) for obs_rect in obstacle_rects)
+
+        # 3. Calcula o caminho
+        grid_path = astar(start_node, end_node, is_blocked, grid_width, grid_height)
+
+        # 4. Converte o caminho da grade para coordenadas do mundo
+        if grid_path and len(grid_path) > 1:
+            self.path = [
+                (
+                    self.area_rect.x
+                    + (x * PATHFINDING_GRID_SIZE)
+                    + PATHFINDING_GRID_SIZE // 2,
+                    self.area_rect.y
+                    + (y * PATHFINDING_GRID_SIZE)
+                    + PATHFINDING_GRID_SIZE // 2,
+                )
+                for x, y in grid_path
+            ]
+            self.path.pop(0)
+        else:
+            self.path = []
+
+    def update(self, dt, player, other_npcs):
         """
-        REQUISITO: "Ir em direção ao jogador"
-        Move o NPC na direção do jogador, mas confinado à sua própria área.
+        Atualiza o NPC, agora usando A* para seguir o jogador.
         """
         if not self.is_alive:
             return
-        # mover em direção ao player
-        dx = player.rect.centerx - self.rect.centerx
-        dy = player.rect.centery - self.rect.centery
-        dist = math.hypot(dx, dy) or 1
-        self.rect.x += self.speed * dt * dx / dist
-        self.rect.y += self.speed * dt * dy / dist
-        self.rect.clamp_ip(self.area_rect) # Garante que o NPC não saia da sua área
+
+        # Timer para recalcular o caminho
+        self.path_timer -= dt
+        if self.path_timer <= 0:
+            self.path_timer = self.path_recalculation_time
+            if self.area_rect.collidepoint(player.rect.center):
+                self._recalculate_path(player, other_npcs)
+            else:
+                self.path = []
+
+        # Lógica de movimento
+        target_pos = None
+        if self.path:
+            target_pos = self.path[0]
+        elif self.area_rect.collidepoint(player.rect.center):
+            # Fallback: se não há caminho, vai direto ao jogador
+            target_pos = player.rect.center
+
+        if target_pos:
+            dx = target_pos[0] - self.rect.centerx
+            dy = target_pos[1] - self.rect.centery
+            dist = math.hypot(dx, dy)
+
+            # Se chegou perto do waypoint, avança para o próximo
+            if self.path and dist < PATHFINDING_GRID_SIZE / 2:
+                self.path.pop(0)
+
+            # Move em direção ao alvo
+            if dist > 1:
+                self.rect.x += self.speed * dt * dx / dist
+                self.rect.y += self.speed * dt * dy / dist
+
+        self.rect.clamp_ip(self.area_rect)
         self._animate()
-        if not self.area_rect.collidepoint(player.rect.center):
-            return
-        # cooldown
+
         if self.damage_cooldown > 0:
             self.damage_cooldown -= dt
 
     def attack_player(self, player):
-        """
-        REQUISITO: "Enquanto houver sobreposição com o jogador, haverá danos à saúde do jogador"
-        Verifica a colisão e causa dano ao jogador se o cooldown permitir.
-        """
         if self.is_alive and self.damage_cooldown <= 0:
             if player.get_rect().colliderect(self.rect):
                 player.take_damage(self.damage)
-                self.damage_cooldown = 1.0  # 1s
+                self.damage_cooldown = 1.0
                 return True
         return False
 
@@ -277,17 +351,12 @@ class NPC:
             pygame.draw.rect(surface, GREEN, (bar_x, bar_y, self.rect.width * pct, 4))
 
     def take_damage(self, dmg):
-        """
-        REQUISITO: "Qualquer personagem ... com saúde não positiva, morre"
-        Reduz a saúde do NPC e o marca como morto se a saúde chegar a zero.
-        """
         if self.is_alive:
             self.health -= dmg
             if self.health <= 0:
                 self.health = 0
                 self.is_alive = False
 
-    # stub; as subclasses implementam
     def _animate(self):
         pass
 
@@ -296,7 +365,6 @@ class NPC:
 # SPIDER
 # ────────────────────
 class Spider(NPC):
-    """Uma aranha rápida, mas com menos vida e dano."""
     def __init__(self, x, y, area):
         super().__init__(x, y, area)
         self.spritesheet = SpriteSheet("assets/SpiderSheet.png")
@@ -347,7 +415,6 @@ class Spider(NPC):
 # DROID
 # ────────────────────
 class Droid(NPC):
-    """Um droid mais lento, porém mais resistente e com mais dano."""
     def __init__(self, x, y, area):
         super().__init__(x, y, area)
         self.spritesheet = SpriteSheet("assets/DroidSheet.png")
@@ -387,11 +454,6 @@ class Droid(NPC):
 # ITEM
 # ────────────────────
 class Item:
-    """
-    Representa um item coletável no mundo (vida ou munição).
-
-    REQUISITOS: "caixas de primeiros socorros", "caixas de munição"
-    """
     def __init__(self, x, y, item_type):
         self.item_type = item_type
 
@@ -412,7 +474,6 @@ class Item:
         self.rect = self.image.get_rect(topleft=(x, y))
         self.collected = False
 
-    # helpers
     def _load_or_fallback(self, path, color):
         if os.path.exists(path):
             img = pygame.image.load(path).convert_alpha()
@@ -426,7 +487,6 @@ class Item:
         surf.fill(color)
         return surf
 
-    # draw
     def draw(self, surface, viewport):
         if self.collected:
             return

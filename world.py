@@ -169,7 +169,8 @@ class Area:
         if not self.is_active:
             return
         for npc in self.npcs:
-            npc.update(dt, player)
+            other_npcs = [n for n in self.npcs if n is not npc]
+            npc.update(dt, player, other_npcs)
 
     def draw(self, surface, viewport):
         """Desenha o conteúdo da área se estiver visível na viewport."""
