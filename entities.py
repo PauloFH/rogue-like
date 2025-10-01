@@ -10,6 +10,9 @@ from settings import (
     AMMO_RADIUS,
     AMMO_DAMAGE,
     RED,
+    GRID_SIZE,
+    AREA_WIDTH,
+    AREA_HEIGHT,
     GREEN,
     NPC_HEALTH,
     NPC_SPEED,
@@ -72,7 +75,6 @@ class Player:
     def update(self, dt, keys):
         if not self.is_alive:
             return
-
         dx = dy = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             dx -= self.speed * dt
@@ -94,12 +96,17 @@ class Player:
                 self.direction = "front"
             elif dy < 0:
                 self.direction = "back"
-        self.x += dx
-        self.y += dy
+        new_x = self.x + dx
+        new_y = self.y + dy
+        world_min_x = 0
+        world_min_y = 0
+        world_max_x = GRID_SIZE * AREA_WIDTH - self.width
+        world_max_y = GRID_SIZE * AREA_HEIGHT - self.height
+        self.x = max(world_min_x, min(new_x, world_max_x))
+        self.y = max(world_min_y, min(new_y, world_max_y))
         self.rect.x = int(self.x)
         self.rect.y = int(self.y)
         self.animate()
-
         if self.health <= 0:
             self.is_alive = False
 

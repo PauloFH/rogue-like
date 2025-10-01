@@ -6,6 +6,7 @@ from settings import (
     AREA_HEIGHT,
     GRID_SIZE,
     MAX_ACTIVE_AREAS,
+    GRID_SIZE,
     AREA_ACTIVATION_DISTANCE,
     GREEN,
     GRAY,
@@ -13,6 +14,7 @@ from settings import (
     NPC_SIZE,
 )
 from entities import Spider, Droid, Item
+from sprites import SpriteSheet
 
 
 class Area:
@@ -21,6 +23,10 @@ class Area:
         self.grid_y = grid_y
         self.world_x = grid_x * AREA_WIDTH
         self.world_y = grid_y * AREA_HEIGHT
+        self.ground_tiles = []
+        self.decorations = []
+        self.tile_map = []
+        self.tile_size = 16
         self.is_active = False
         self.is_loaded = False
         self.npcs = []
@@ -29,6 +35,54 @@ class Area:
     def load(self):
         if self.is_loaded:
             return
+        try:
+            ground_spritesheet = SpriteSheet("assets/ground_tileset.png")
+            for row in range(3):
+                for col in range(3):
+                    tile = ground_spritesheet.get_image(
+                        col * self.tile_size,
+                        row * self.tile_size,
+                        self.tile_size,
+                        self.tile_size,
+                    )
+                    self.ground_tiles.append(tile)
+
+            for y in range(0, AREA_HEIGHT, self.tile_size):
+                for x in range(0, AREA_WIDTH, self.tile_size):
+                    chosen_tile = random.choice(self.ground_tiles)
+                    self.tile_map.append((chosen_tile, (x, y)))
+
+        except (pygame.error, FileNotFoundError):
+            print(
+                "Aviso: 'assets/ground_tileset.png' não encontrado. O chão não será desenhado."
+            )
+            self.ground_tiles = None
+
+        try:
+            all_marks = []
+
+            marks_16_sheet = SpriteSheet("assets/marks_16.png")
+            for row in range(5):
+                for col in range(14):
+                    all_marks.append(
+                        marks_16_sheet.get_image(col * 16, row * 16, 16, 16)
+                    )
+            marks_48_sheet = SpriteSheet("assets/marks_48.png")
+            for i in range(3):
+                all_marks.append(marks_48_sheet.get_image(i * 48, 0, 48, 48))
+            for _ in range(random.randint(10, 25)):
+                mark_image = random.choice(all_marks)
+                pos_x = self.world_x + random.randint(
+                    0, AREA_WIDTH - mark_image.get_width()
+                )
+                pos_y = self.world_y + random.randint(
+                    0, AREA_HEIGHT - mark_image.get_height()
+                )
+                self.decorations.append((mark_image, (pos_x, pos_y)))
+
+        except (pygame.error, FileNotFoundError):
+            print("Aviso: Não foi possível carregar os spritesheets de 'marks'.")
+
         for _ in range(random.randint(5, 15)):
             x = self.world_x + random.randint(50, AREA_WIDTH - 50)
             y = self.world_y + random.randint(50, AREA_HEIGHT - 50)
@@ -70,9 +124,25 @@ class Area:
             npc.update(dt, player_pos)
 
     def draw(self, screen, viewport):
+
         if not self.is_loaded:
             return
+        if self.ground_tiles:
+            for tile_image, (local_x, local_y) in self.tile_map:
+                world_x = self.world_x + local_x
+                world_y = self.world_y + local_y
+                if viewport.is_visible(
+                    world_x, world_y, self.tile_size, self.tile_size
+                ):
+                    screen_x, screen_y = viewport.world_to_screen(world_x, world_y)
+                    screen.blit(tile_image, (screen_x, screen_y))
 
+        for image, (world_x, world_y) in self.decorations:
+            if viewport.is_visible(
+                world_x, world_y, image.get_width(), image.get_height()
+            ):
+                screen_pos = viewport.world_to_screen(world_x, world_y)
+                screen.blit(image, screen_pos)
         screen_x, screen_y = viewport.world_to_screen(self.world_x, self.world_y)
         color = GREEN if self.is_active else GRAY
         pygame.draw.rect(
