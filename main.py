@@ -31,16 +31,20 @@ class Game:
         self.screen = pygame.display.set_mode(
             (self.screen_width, self.screen_height), pygame.RESIZABLE
         )
+        pygame.display.set_caption("RogueLike 9 Areas")
 
-        pygame.display.set_caption("Jogo de Sobrevivência Modular")
+        self.zoom_level = 2.0
+        self.game_surface_size = (
+            int(self.screen_width / self.zoom_level),
+            int(self.screen_height / self.zoom_level),
+        )
+        self.game_surface = pygame.Surface(self.game_surface_size)
+
         self.clock = pygame.time.Clock()
-
-        # Fontes para as telas
         self.title_font = pygame.font.Font(None, 74)
         self.instructions_font = pygame.font.Font(None, 36)
-
         self.running = True
-
+        self.ammo_effect = None
         self.game_state = "start_screen"
 
         try:
@@ -54,10 +58,9 @@ class Game:
         """Prepara ou reinicia todas as variáveis para uma nova partida."""
         print("Iniciando novo jogo!")
         self.game_start_time = time.time()
-        self.viewport = Viewport(self.screen_width, self.screen_height)
+        self.viewport = Viewport(self.game_surface_size[0], self.game_surface_size[1])
         self.world_grid = WorldGrid()
         self.player = Player(AREA_WIDTH // 2, AREA_HEIGHT // 2)
-        # Muda o estado para 'jogando'
         self.game_state = "playing"
 
     def handle_gameplay_events(self):
@@ -74,7 +77,13 @@ class Game:
                     self.player.use_health_item()
                 elif event.key == pygame.K_SPACE:
                     npcs, _ = self.world_grid.get_active_entities()
-                    self.player.use_ammo_item(npcs)
+                    if self.player.use_ammo_item(npcs):
+                        player_center_x = self.player.rect.centerx
+                        player_center_y = self.player.rect.centery
+                        self.ammo_effect = {
+                            "pos": (player_center_x, player_center_y),
+                            "timer": 0.2,
+                        }
 
     def handle_menu_events(self):
         """Lida com os eventos nas telas de início e fim."""
@@ -95,28 +104,41 @@ class Game:
                     self.reset_game()
 
     def handle_resize(self, event):
-        """Lida com o redimensionamento da janela."""
+        """Lida com o redimensionamento da janela e ajusta as superfícies."""
         self.screen_width = event.w
         self.screen_height = event.h
         self.screen = pygame.display.set_mode(
             (self.screen_width, self.screen_height), pygame.RESIZABLE
         )
+
+        self.game_surface_size = (
+            int(self.screen_width / self.zoom_level),
+            int(self.screen_height / self.zoom_level),
+        )
+        self.game_surface = pygame.Surface(self.game_surface_size)
+
         if hasattr(self, "viewport"):
-            self.viewport.update_size(self.screen_width, self.screen_height)
+            self.viewport.update_size(
+                self.game_surface_size[0], self.game_surface_size[1]
+            )
 
     def update(self, dt):
+        """Atualiza a lógica do jogo, executada apenas no estado 'playing'."""
         if self.game_state != "playing":
             return
-        if hasattr(self, "ammo_effect") and self.ammo_effect:
+
+        if self.ammo_effect:
             self.ammo_effect["timer"] -= dt
             if self.ammo_effect["timer"] <= 0:
                 self.ammo_effect = None
+
         if not self.player.is_alive:
             self.game_state = "game_over"
             return
         if time.time() - self.game_start_time >= GAME_DURATION:
             self.game_state = "win_screen"
             return
+
         keys = pygame.key.get_pressed()
         self.player.update(dt, keys)
         self.viewport.update(self.player.rect.centerx, self.player.rect.centery)
@@ -143,7 +165,7 @@ class Game:
                     self.player.ammo_items += 1
 
     def draw_background(self):
-        """Desenha o fundo infinito de espaço se a imagem existir."""
+        """Desenha o fundo infinito de espaço diretamente na tela principal."""
         if not self.background_tile:
             self.screen.fill(BLACK)
             return
@@ -152,28 +174,29 @@ class Game:
 
         offset_x = self.viewport.x % self.bg_tile_size[0]
         offset_y = self.viewport.y % self.bg_tile_size[1]
-        for x in range(
-            -self.bg_tile_size[0],
-            self.screen_width + self.bg_tile_size[0],
-            self.bg_tile_size[0],
-        ):
+        for x in range(-self.bg_tile_size[0], self.screen_width, self.bg_tile_size[0]):
             for y in range(
-                -self.bg_tile_size[1],
-                self.screen_height + self.bg_tile_size[1],
-                self.bg_tile_size[1],
+                -self.bg_tile_size[1], self.screen_height, self.bg_tile_size[1]
             ):
                 self.screen.blit(self.background_tile, (x - offset_x, y - offset_y))
+
     def draw_gameplay(self):
-        """Desenha todos os elementos do jogo quando o estado é 'playing'."""
+        """Desenha a cena do jogo na superfície menor e a escala para a tela principal."""
         self.draw_background()
-        self.world_grid.draw(self.screen, self.viewport)
-        self.player.draw(self.screen, self.viewport)
-        self.draw_ammo_effect()
+        self.game_surface.set_colorkey(BLACK)
+        self.game_surface.fill(BLACK)
+        self.world_grid.draw(self.game_surface, self.viewport)
+        self.player.draw(self.game_surface, self.viewport)
+        self.draw_ammo_effect(on_surface=self.game_surface)
+        scaled_surface = pygame.transform.scale(
+            self.game_surface, (self.screen_width, self.screen_height)
+        )
+        self.screen.blit(scaled_surface, (0, 0))
         self.draw_ui()
         self.draw_minimap()
 
-    def draw_ammo_effect(self):
-        if hasattr(self, "ammo_effect") and self.ammo_effect:
+    def draw_ammo_effect(self, on_surface):
+        if self.ammo_effect:
             effect_pos_world = self.ammo_effect["pos"]
             effect_pos_screen = self.viewport.world_to_screen(
                 effect_pos_world[0], effect_pos_world[1]
@@ -185,7 +208,7 @@ class Game:
             pygame.draw.circle(
                 surface, (*YELLOW, alpha), (AMMO_RADIUS, AMMO_RADIUS), AMMO_RADIUS
             )
-            self.screen.blit(
+            on_surface.blit(
                 surface,
                 (
                     effect_pos_screen[0] - AMMO_RADIUS,
@@ -206,65 +229,55 @@ class Game:
             self.screen.blit(surface, (10, 10 + i * 30))
 
     def draw_start_screen(self):
-        """Desenha a tela inicial."""
-        self.screen.fill(BLACK)
-        title_surf = self.title_font.render("Sobrevivência Modular", True, WHITE)
+        self.draw_background()
+        title_surf = self.title_font.render("RogueLike 9 Areas", True, WHITE)
         inst_surf = self.instructions_font.render(
             "Pressione ENTER para começar", True, GREEN
         )
-
         title_rect = title_surf.get_rect(
             center=(self.screen_width // 2, self.screen_height // 2 - 50)
         )
         inst_rect = inst_surf.get_rect(
             center=(self.screen_width // 2, self.screen_height // 2 + 50)
         )
-
         self.screen.blit(title_surf, title_rect)
         self.screen.blit(inst_surf, inst_rect)
 
     def draw_end_screen(self, title, title_color, instruction):
-        """Função genérica para desenhar telas de fim de jogo."""
         self.draw_gameplay()
         overlay = pygame.Surface(
             (self.screen_width, self.screen_height), pygame.SRCALPHA
         )
         overlay.fill((0, 0, 0, 180))
         self.screen.blit(overlay, (0, 0))
-
         title_surf = self.title_font.render(title, True, title_color)
         inst_surf = self.instructions_font.render(instruction, True, WHITE)
-
         title_rect = title_surf.get_rect(
             center=(self.screen_width // 2, self.screen_height // 2 - 50)
         )
         inst_rect = inst_surf.get_rect(
             center=(self.screen_width // 2, self.screen_height // 2 + 50)
         )
-
         self.screen.blit(title_surf, title_rect)
         self.screen.blit(inst_surf, inst_rect)
 
     def run(self):
-        """Loop principal do jogo, agora controlado pela máquina de estados."""
+        """Loop principal do jogo, controlado pela máquina de estados."""
         while self.running:
             dt = self.clock.tick(FPS) / 1000.0
 
             if self.game_state == "start_screen":
                 self.handle_menu_events()
                 self.draw_start_screen()
-
             elif self.game_state == "playing":
                 self.handle_gameplay_events()
                 self.update(dt)
                 self.draw_gameplay()
-
             elif self.game_state == "game_over":
                 self.handle_menu_events()
                 self.draw_end_screen(
                     "GAME OVER", RED, "Pressione R para reiniciar ou ESC para sair"
                 )
-
             elif self.game_state == "win_screen":
                 self.handle_menu_events()
                 self.draw_end_screen(
@@ -277,10 +290,9 @@ class Game:
         sys.exit()
 
     def draw_minimap(self):
-        """Desenha um minimapa no canto superior direito da tela."""
-        cell_size = 20
-        padding = 4
-        border_size = 2
+        if not hasattr(self, "player"):
+            return  # Não desenha se o jogo não começou
+        cell_size, padding, border_size = 20, 4, 2
         total_width = (GRID_SIZE * cell_size) + ((GRID_SIZE - 1) * padding)
         total_height = (GRID_SIZE * cell_size) + ((GRID_SIZE - 1) * padding)
         map_x = self.screen_width - total_width - 10
@@ -292,19 +304,17 @@ class Game:
             total_height + (border_size * 2),
         )
         pygame.draw.rect(self.screen, BLACK, background_rect)
-        pygame.draw.rect(self.screen, WHITE, background_rect, 1)  # Borda branca
+        pygame.draw.rect(self.screen, WHITE, background_rect, 1)
         player_grid_x = int(self.player.x // AREA_WIDTH)
         player_grid_y = int(self.player.y // AREA_HEIGHT)
         player_area_coord = (player_grid_x, player_grid_y)
         for gx in range(GRID_SIZE):
             for gy in range(GRID_SIZE):
-                coord = (gx, gy)
+                coord, color = (gx, gy), GRAY
                 if coord == player_area_coord:
                     color = YELLOW
                 elif coord in self.world_grid.active_areas:
                     color = GREEN
-                else:
-                    color = GRAY
                 rect_x = map_x + gx * (cell_size + padding)
                 rect_y = map_y + gy * (cell_size + padding)
                 pygame.draw.rect(

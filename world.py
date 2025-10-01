@@ -104,6 +104,12 @@ class Area:
 
         self.is_loaded = True
 
+    def get_distance_to_player(self, player_x, player_y):
+        """Calcula a distância do centro desta área até a posição do jogador."""
+        center_x = self.world_x + AREA_WIDTH // 2
+        center_y = self.world_y + AREA_HEIGHT // 2
+        return math.sqrt((player_x - center_x) ** 2 + (player_y - center_y) ** 2)
+
     def unload(self):
         self.npcs.clear()
         self.items.clear()
@@ -123,10 +129,10 @@ class Area:
         for npc in self.npcs:
             npc.update(dt, player_pos)
 
-    def draw(self, screen, viewport):
-
+    def draw(self, surface, viewport):
         if not self.is_loaded:
             return
+
         if self.ground_tiles:
             for tile_image, (local_x, local_y) in self.tile_map:
                 world_x = self.world_x + local_x
@@ -135,34 +141,36 @@ class Area:
                     world_x, world_y, self.tile_size, self.tile_size
                 ):
                     screen_x, screen_y = viewport.world_to_screen(world_x, world_y)
-                    screen.blit(tile_image, (screen_x, screen_y))
+                    surface.blit(tile_image, (screen_x, screen_y))
 
         for image, (world_x, world_y) in self.decorations:
             if viewport.is_visible(
                 world_x, world_y, image.get_width(), image.get_height()
             ):
                 screen_pos = viewport.world_to_screen(world_x, world_y)
-                screen.blit(image, screen_pos)
-        screen_x, screen_y = viewport.world_to_screen(self.world_x, self.world_y)
-        color = GREEN if self.is_active else GRAY
-        pygame.draw.rect(
-            screen, color, (screen_x, screen_y, AREA_WIDTH, AREA_HEIGHT), 3
-        )
+                surface.blit(image, screen_pos)
 
+        # Desenha os itens
         for item in self.items:
             if viewport.is_visible(
                 item.rect.x, item.rect.y, item.rect.width, item.rect.height
             ):
-                item.draw(screen, viewport)
+                # CORRIGIDO AQUI (ao passar o parâmetro)
+                item.draw(surface, viewport)
 
+        # Desenha os NPCs
         for npc in self.npcs:
-            if viewport.is_visible(npc.x, npc.y, NPC_SIZE, NPC_SIZE):
-                npc.draw(screen, viewport)
+            # A verificação de visibilidade aqui estava inconsistente, corrigido também
+            if viewport.is_visible(
+                npc.rect.x, npc.rect.y, npc.rect.width, npc.rect.height
+            ):
+                # CORRIGIDO AQUI (ao passar o parâmetro)
+                npc.draw(surface, viewport)
 
-    def get_distance_to_player(self, player_x, player_y):
-        center_x = self.world_x + AREA_WIDTH // 2
-        center_y = self.world_y + AREA_HEIGHT // 2
-        return math.sqrt((player_x - center_x) ** 2 + (player_y - center_y) ** 2)
+        def get_distance_to_player(self, player_x, player_y):
+            center_x = self.world_x + AREA_WIDTH // 2
+            center_y = self.world_y + AREA_HEIGHT // 2
+            return math.sqrt((player_x - center_x) ** 2 + (player_y - center_y) ** 2)
 
 
 class WorldGrid:
@@ -198,9 +206,9 @@ class WorldGrid:
         for coord in self.active_areas:
             self.areas[coord].update(dt, player_pos)
 
-    def draw(self, screen, viewport):
+    def draw(self, surface, viewport):
         for area in self.areas.values():
-            area.draw(screen, viewport)
+            area.draw(surface, viewport)
 
     def get_active_entities(self):
         npcs = []

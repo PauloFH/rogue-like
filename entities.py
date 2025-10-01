@@ -132,16 +132,16 @@ class Player:
     def get_rect(self):
         return self.rect
 
-    def draw(self, screen, viewport):
+    def draw(self, surface, viewport):
         if not self.is_alive:
             return
         screen_x, screen_y = viewport.world_to_screen(self.rect.x, self.rect.y)
-        screen.blit(self.image, (screen_x, screen_y))
+        surface.blit(self.image, (screen_x, screen_y))
         health_percentage = self.health / self.max_health
         bar_x, bar_y = screen_x, screen_y - 10
-        pygame.draw.rect(screen, RED, (bar_x, bar_y, self.rect.width, 5))
+        pygame.draw.rect(surface, RED, (bar_x, bar_y, self.rect.width, 5))
         pygame.draw.rect(
-            screen, GREEN, (bar_x, bar_y, self.rect.width * health_percentage, 5)
+            surface, GREEN, (bar_x, bar_y, self.rect.width * health_percentage, 5)
         )
 
     def take_damage(self, damage):
@@ -240,17 +240,17 @@ class NPC(pygame.sprite.Sprite):
                 return True
         return False
 
-    def draw(self, screen, viewport):
+    def draw(self, surface, viewport):
         if not self.is_alive:
             return
         screen_x, screen_y = viewport.world_to_screen(self.rect.x, self.rect.y)
-        screen.blit(self.image, (screen_x, screen_y))
+        surface.blit(self.image, (screen_x, screen_y))
         if self.health < self.max_health:
             health_percentage = self.health / self.max_health
             bar_x, bar_y = screen_x, screen_y - 7
-            pygame.draw.rect(screen, RED, (bar_x, bar_y, self.rect.width, 4))
+            pygame.draw.rect(surface, RED, (bar_x, bar_y, self.rect.width, 4))
             pygame.draw.rect(
-                screen, GREEN, (bar_x, bar_y, self.rect.width * health_percentage, 4)
+                surface, GREEN, (bar_x, bar_y, self.rect.width * health_percentage, 4)
             )
 
 
@@ -359,8 +359,8 @@ class Item:
     def get_rect(self):
         return self.rect
 
-    def draw(self, screen, viewport):
+    def draw(self, surface, viewport):
         if self.collected:
             return
         screen_x, screen_y = viewport.world_to_screen(self.rect.x, self.rect.y)
-        screen.blit(self.image, (screen_x, screen_y))
+        surface.blit(self.image, (screen_x, screen_y))
