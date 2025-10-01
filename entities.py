@@ -1,9 +1,11 @@
-import pygame
 import math
-import random
-from sprites import SpriteSheet
 import os
+import random
+import pygame
+
+from sprites import SpriteSheet
 from settings import (
+    NPC_SIZE,
     PLAYER_MAX_HEALTH,
     PLAYER_SPEED,
     HEALTH_RESTORE,
@@ -17,39 +19,44 @@ from settings import (
     NPC_HEALTH,
     NPC_SPEED,
     NPC_DAMAGE,
-    ITEM_SIZE,
+    ITEM_SIZE,  # parece não usado, mas mantive
     YELLOW,
 )
 
 
+# ────────────────────
+# PLAYER
+# ────────────────────
 class Player:
     def __init__(self, x, y):
         self.is_alive = True
+
+        # animações
         self.spritesheet = SpriteSheet("assets/PlayerSheet.png")
         self.animations = {}
-        self.frame_width = 32
-        self.frame_height = 32
-        self.load_animations()
+        self.frame_width = self.frame_height = 32
+        self._load_animations()
+
         self.state = "idle"
         self.direction = "front"
         self.current_animation_key = "idle_front"
-
         self.current_frame = 0
         self.last_update = pygame.time.get_ticks()
         self.animation_speed = 120
+
         self.image = self.animations[self.current_animation_key][0]
         self.rect = self.image.get_rect(topleft=(x, y))
-
         self.x, self.y = float(self.rect.x), float(self.rect.y)
         self.width, self.height = self.rect.size
-        self.health = PLAYER_MAX_HEALTH
-        self.max_health = PLAYER_MAX_HEALTH
+
+        # atributos de jogo
+        self.health = self.max_health = PLAYER_MAX_HEALTH
         self.speed = PLAYER_SPEED
         self.health_items = 0
         self.ammo_items = 0
 
-    def load_animations(self):
-        """Carrega todos os frames para cada animação."""
+    # ---------- animação ----------
+    def _load_animations(self):
         anim_map = {
             0: ("idle", "front", 5),
             1: ("idle", "back", 5),
@@ -62,19 +69,37 @@ class Player:
         }
         for row, (state, direction, frame_count) in anim_map.items():
             key = f"{state}_{direction}"
-            self.animations[key] = []
-            for col in range(frame_count):
-                frame = self.spritesheet.get_image(
+            self.animations[key] = [
+                self.spritesheet.get_image(
                     col * self.frame_width,
                     row * self.frame_height,
                     self.frame_width,
                     self.frame_height,
                 )
-                self.animations[key].append(frame)
+                for col in range(frame_count)
+            ]
 
+    def _animate(self):
+        now = pygame.time.get_ticks()
+        anim_key = f"{self.state}_{self.direction}"
+
+        if anim_key != self.current_animation_key:
+            self.current_animation_key = anim_key
+            self.current_frame = 0
+
+        sequence = self.animations.get(anim_key)
+        if sequence and now - self.last_update > self.animation_speed:
+            self.last_update = now
+            self.current_frame = (self.current_frame + 1) % len(sequence)
+            center = self.rect.center
+            self.image = sequence[self.current_frame]
+            self.rect = self.image.get_rect(center=center)
+
+    # ---------- lógica ----------
     def update(self, dt, keys):
         if not self.is_alive:
             return
+
         dx = dy = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             dx -= self.speed * dt
@@ -84,195 +109,165 @@ class Player:
             dy -= self.speed * dt
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             dy += self.speed * dt
-        if dx == 0 and dy == 0:
-            self.state = "idle"
-        else:
-            self.state = "walking"
-            if dx > 0:
-                self.direction = "right"
-            elif dx < 0:
-                self.direction = "left"
-            elif dy > 0:
-                self.direction = "front"
-            elif dy < 0:
-                self.direction = "back"
+
+        self.state = "idle" if dx == 0 and dy == 0 else "walking"
+        if dx > 0:
+            self.direction = "right"
+        elif dx < 0:
+            self.direction = "left"
+        elif dy > 0:
+            self.direction = "front"
+        elif dy < 0:
+            self.direction = "back"
+
+        # limites do mundo
         new_x = self.x + dx
         new_y = self.y + dy
-        world_min_x = 0
-        world_min_y = 0
-        world_max_x = GRID_SIZE * AREA_WIDTH - self.width
-        world_max_y = GRID_SIZE * AREA_HEIGHT - self.height
-        self.x = max(world_min_x, min(new_x, world_max_x))
-        self.y = max(world_min_y, min(new_y, world_max_y))
+        wmin_x = 0
+        wmin_y = 0
+        wmax_x = GRID_SIZE * AREA_WIDTH - self.width
+        wmax_y = GRID_SIZE * AREA_HEIGHT - self.height
+
+        self.x = max(wmin_x, min(new_x, wmax_x))
+        self.y = max(wmin_y, min(new_y, wmax_y))
         self.rect.x = int(self.x)
         self.rect.y = int(self.y)
-        self.animate()
+
+        self._animate()
+
         if self.health <= 0:
             self.is_alive = False
 
-    def animate(self):
-        now = pygame.time.get_ticks()
-        anim_key = f"{self.state}_{self.direction}"
-        if anim_key != self.current_animation_key:
-            self.current_animation_key = anim_key
-            self.current_frame = 0
-
-        if anim_key not in self.animations:
-            return
-
-        if now - self.last_update > self.animation_speed:
-            self.last_update = now
-            self.current_frame = (self.current_frame + 1) % len(
-                self.animations[anim_key]
-            )
-            center = self.rect.center
-            self.image = self.animations[anim_key][self.current_frame]
-            self.rect = self.image.get_rect(center=center)
-
-    def get_rect(self):
-        return self.rect
-
-    def draw(self, surface, viewport):
-        if not self.is_alive:
-            return
-        screen_x, screen_y = viewport.world_to_screen(self.rect.x, self.rect.y)
-        surface.blit(self.image, (screen_x, screen_y))
-        health_percentage = self.health / self.max_health
-        bar_x, bar_y = screen_x, screen_y - 10
-        pygame.draw.rect(surface, RED, (bar_x, bar_y, self.rect.width, 5))
-        pygame.draw.rect(
-            surface, GREEN, (bar_x, bar_y, self.rect.width * health_percentage, 5)
-        )
-
-    def take_damage(self, damage):
+    # ---------- utilidades ----------
+    def take_damage(self, dmg):  # recebido de NPC
         if self.is_alive:
-            self.health -= damage
-            if self.health < 0:
-                self.health = 0
+            self.health = max(0, self.health - dmg)
 
     def use_health_item(self):
-        if self.health_items > 0 and self.health < self.max_health:
+        if self.health_items and self.health < self.max_health:
             self.health_items -= 1
             self.health = min(self.max_health, self.health + HEALTH_RESTORE)
             return True
         return False
 
     def use_ammo_item(self, npcs):
-        if self.ammo_items > 0:
-            self.ammo_items -= 1
-            damaged_count = 0
-            for npc in npcs:
-                distance = math.sqrt(
-                    (self.rect.centerx - npc.rect.centerx) ** 2
-                    + (self.rect.centery - npc.rect.centery) ** 2
-                )
-                if distance <= AMMO_RADIUS:
-                    npc.take_damage(AMMO_DAMAGE)
-                    damaged_count += 1
-            return damaged_count > 0
-        return False
+        if not self.ammo_items:
+            return 0
+        self.ammo_items -= 1
+        hit = 0
+        for npc in npcs:
+            dist = math.hypot(
+                self.rect.centerx - npc.rect.centerx,
+                self.rect.centery - npc.rect.centery,
+            )
+            if dist <= AMMO_RADIUS:
+                npc.take_damage(AMMO_DAMAGE)
+                hit += 1
+        return hit
 
-
-class NPC(pygame.sprite.Sprite):
-    """Classe base para todos os NPCs."""
-
-    def __init__(self, x, y):
-        super().__init__()
-        self.x, self.y = float(x), float(y)
-        self.is_alive = True
-        self.damage_cooldown = 0
-        self.current_frame = 0
-        self.last_update = pygame.time.get_ticks()
-
-    def update(self, dt, player_pos):
+    # ---------- render ----------
+    def draw(self, surface, viewport):
         if not self.is_alive:
             return
+        sx, sy = viewport.world_to_screen(self.rect.x, self.rect.y)
+        surface.blit(self.image, (sx, sy))
 
-        player_x, player_y = player_pos[0], player_pos[1]
-        dx = player_x - self.rect.centerx
-        dy = player_y - self.rect.centery
-        distance = math.sqrt(dx**2 + dy**2)
-
-        if distance > 0:
-            self.x += (dx / distance) * self.speed * dt
-            self.y += (dy / distance) * self.speed * dt
-            self.rect.x = int(self.x)
-            self.rect.y = int(self.y)
-
-        if self.damage_cooldown > 0:
-            self.damage_cooldown -= dt
-
-        self.animate()
-
-    def animate(self):
-        """Animação genérica que funciona para subclasses."""
-        now = pygame.time.get_ticks()
-
-        anim_sequence = getattr(self, "animation", None)
-        if anim_sequence is None:
-            anim_sequence = self.animations.get(self.state, [])
-
-        if not anim_sequence:
-            return
-
-        if now - self.last_update > self.animation_speed:
-            self.last_update = now
-            self.current_frame = (self.current_frame + 1) % len(anim_sequence)
-            center = self.rect.center
-            self.image = anim_sequence[self.current_frame]
-            self.rect = self.image.get_rect(center=center)
+        # barra de vida
+        pct = self.health / self.max_health
+        bar_x, bar_y = sx, sy - 10
+        pygame.draw.rect(surface, RED, (bar_x, bar_y, self.rect.width, 5))
+        pygame.draw.rect(surface, GREEN, (bar_x, bar_y, self.rect.width * pct, 5))
 
     def get_rect(self):
         return self.rect
 
-    def take_damage(self, damage):
-        if self.is_alive:
-            self.health -= damage
-            if self.health <= 0:
-                self.health = 0
-                self.is_alive = False
+
+# ────────────────────
+# NPC base
+# ────────────────────
+class NPC:
+    def __init__(self, x, y, area, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rect = pygame.Rect(x, y, NPC_SIZE, NPC_SIZE)
+        self.is_alive = True
+        self.damage_cooldown = 2.0  # segundos
+        self.area = area
+        self.area_rect = pygame.Rect(
+            area.world_x, area.world_y, AREA_WIDTH, AREA_HEIGHT
+        )
+
+    def update(self, dt, player):
+        if not self.is_alive:
+            return
+        # mover em direção ao player
+        dx = player.rect.centerx - self.rect.centerx
+        dy = player.rect.centery - self.rect.centery
+        dist = math.hypot(dx, dy) or 1
+        self.rect.x += self.speed * dt * dx / dist
+        self.rect.y += self.speed * dt * dy / dist
+        self.rect.clamp_ip(self.area_rect)
+        self._animate()
+        if not self.area_rect.collidepoint(player.rect.center):
+            return
+        # cooldown
+        if self.damage_cooldown > 0:
+            self.damage_cooldown -= dt
 
     def attack_player(self, player):
         if self.is_alive and self.damage_cooldown <= 0:
-            if player.get_rect().colliderect(self.get_rect()):
+            if player.get_rect().colliderect(self.rect):
                 player.take_damage(self.damage)
-                self.damage_cooldown = 1.0  # Cooldown de 1 segundo
+                self.damage_cooldown = 1.0  # 1s
                 return True
         return False
 
     def draw(self, surface, viewport):
         if not self.is_alive:
             return
-        screen_x, screen_y = viewport.world_to_screen(self.rect.x, self.rect.y)
-        surface.blit(self.image, (screen_x, screen_y))
+        sx, sy = viewport.world_to_screen(self.rect.x, self.rect.y)
+        surface.blit(self.image, (sx, sy))
+
         if self.health < self.max_health:
-            health_percentage = self.health / self.max_health
-            bar_x, bar_y = screen_x, screen_y - 7
+            pct = self.health / self.max_health
+            bar_x, bar_y = sx, sy - 7
             pygame.draw.rect(surface, RED, (bar_x, bar_y, self.rect.width, 4))
-            pygame.draw.rect(
-                surface, GREEN, (bar_x, bar_y, self.rect.width * health_percentage, 4)
-            )
+            pygame.draw.rect(surface, GREEN, (bar_x, bar_y, self.rect.width * pct, 4))
+
+    def take_damage(self, dmg):
+        if self.is_alive:
+            self.health -= dmg
+            if self.health <= 0:
+                self.health = 0
+                self.is_alive = False
+
+    # stub; as subclasses implementam
+    def _animate(self):
+        pass
 
 
+# ────────────────────
+# SPIDER
+# ────────────────────
 class Spider(NPC):
-    def __init__(self, x, y):
-        super().__init__(x, y)
+    def __init__(self, x, y, area):
+        super().__init__(x, y, area)
         self.spritesheet = SpriteSheet("assets/SpiderSheet.png")
-        self.frame_width, self.frame_height = 32, 32
+        self.frame_width = self.frame_height = 32
         self.animations = {"idle": [], "walking": []}
-        self.load_animations()
+        self._load_animations()
 
         self.state = "walking"
         self.image = self.animations["walking"][0]
         self.rect = self.image.get_rect(topleft=(x, y))
 
-        self.health = NPC_HEALTH * 0.8
-        self.max_health = self.health
+        self.health = self.max_health = NPC_HEALTH * 0.8
         self.speed = NPC_SPEED * 1.2
         self.damage = NPC_DAMAGE * 0.7
         self.animation_speed = 100
+        self.current_frame = 0
+        self.last_update = pygame.time.get_ticks()
 
-    def load_animations(self):
+    def _load_animations(self):
         for i in range(6):
             self.animations["idle"].append(
                 self.spritesheet.get_image(
@@ -289,25 +284,39 @@ class Spider(NPC):
                 )
             )
 
+    def _animate(self):
+        now = pygame.time.get_ticks()
+        seq = self.animations[self.state]
+        if now - self.last_update > self.animation_speed:
+            self.last_update = now
+            self.current_frame = (self.current_frame + 1) % len(seq)
+            center = self.rect.center
+            self.image = seq[self.current_frame]
+            self.rect = self.image.get_rect(center=center)
 
+
+# ────────────────────
+# DROID
+# ────────────────────
 class Droid(NPC):
-    def __init__(self, x, y):
-        super().__init__(x, y)
+    def __init__(self, x, y, area):
+        super().__init__(x, y, area)
         self.spritesheet = SpriteSheet("assets/DroidSheet.png")
-        self.frame_width, self.frame_height = 32, 32
+        self.frame_width = self.frame_height = 32
         self.animation = []
-        self.load_animation()
+        self._load_animation()
 
         self.image = self.animation[0]
         self.rect = self.image.get_rect(topleft=(x, y))
 
-        self.health = NPC_HEALTH * 1.5
-        self.max_health = self.health
+        self.health = self.max_health = NPC_HEALTH * 1.5
         self.speed = NPC_SPEED * 0.8
         self.damage = NPC_DAMAGE * 1.5
         self.animation_speed = 150
+        self.current_frame = 0
+        self.last_update = pygame.time.get_ticks()
 
-    def load_animation(self):
+    def _load_animation(self):
         for i in range(6):
             self.animation.append(
                 self.spritesheet.get_image(
@@ -315,52 +324,60 @@ class Droid(NPC):
                 )
             )
 
+    def _animate(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_update > self.animation_speed:
+            self.last_update = now
+            self.current_frame = (self.current_frame + 1) % len(self.animation)
+            center = self.rect.center
+            self.image = self.animation[self.current_frame]
+            self.rect = self.image.get_rect(center=center)
 
+
+# ────────────────────
+# ITEM
+# ────────────────────
 class Item:
     def __init__(self, x, y, item_type):
         self.item_type = item_type
 
-        if self.item_type == "health":
-            image_path = "assets/health.png"
-            if os.path.exists(image_path):
-                original_image = pygame.image.load(image_path).convert_alpha()
-                original_size = original_image.get_size()
-                new_size = (int(original_size[0] * 0.5), int(original_size[1] * 0.5))
-                self.image = pygame.transform.scale(original_image, new_size)
+        if item_type == "health":
+            img_path = "assets/health.png"
+            self.image = self._load_or_fallback(img_path, GREEN)
+        elif item_type == "ammo":
+            img_path = "assets/ammunition.png"
+            if os.path.exists(img_path):
+                sheet = SpriteSheet(img_path)
+                frames = [sheet.get_image(i * 16, 0, 16, 16) for i in range(3)]
+                self.image = random.choice(frames)
             else:
-                print(
-                    f"Aviso: Imagem '{image_path}' não encontrada. Usando cor de fallback."
-                )
-                self.image = pygame.Surface((16, 16))
-                self.image.fill(GREEN)
-
-        elif self.item_type == "ammo":
-            image_path = "assets/ammunition.png"
-            if os.path.exists(image_path):
-                spritesheet = SpriteSheet(image_path)
-                ammo_frames = []
-                for i in range(3):
-                    frame = spritesheet.get_image(i * 16, 0, 16, 16)
-                    ammo_frames.append(frame)
-                self.image = random.choice(ammo_frames)
-            else:
-                print(
-                    f"Aviso: Imagem '{image_path}' não encontrada. Usando cor de fallback."
-                )
-                self.image = pygame.Surface((16, 16))
-                self.image.fill(YELLOW)
+                self.image = self._make_fallback_surface(YELLOW)
         else:
-            self.image = pygame.Surface((16, 16))
-            self.image.fill((128, 128, 128))
+            self.image = self._make_fallback_surface((128, 128, 128))
 
         self.rect = self.image.get_rect(topleft=(x, y))
         self.collected = False
 
-    def get_rect(self):
-        return self.rect
+    # helpers
+    def _load_or_fallback(self, path, color):
+        if os.path.exists(path):
+            img = pygame.image.load(path).convert_alpha()
+            w, h = img.get_size()
+            return pygame.transform.scale(img, (w // 2, h // 2))
+        return self._make_fallback_surface(color)
 
+    @staticmethod
+    def _make_fallback_surface(color, size=(16, 16)):
+        surf = pygame.Surface(size, pygame.SRCALPHA)
+        surf.fill(color)
+        return surf
+
+    # draw
     def draw(self, surface, viewport):
         if self.collected:
             return
-        screen_x, screen_y = viewport.world_to_screen(self.rect.x, self.rect.y)
-        surface.blit(self.image, (screen_x, screen_y))
+        sx, sy = viewport.world_to_screen(self.rect.x, self.rect.y)
+        surface.blit(self.image, (sx, sy))
+
+    def get_rect(self):
+        return self.rect

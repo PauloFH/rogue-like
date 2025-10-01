@@ -143,7 +143,7 @@ class Game:
         self.player.update(dt, keys)
         self.viewport.update(self.player.rect.centerx, self.player.rect.centery)
         self.world_grid.update_active_areas(self.player.x, self.player.y)
-        self.world_grid.update(dt, (self.player.x, self.player.y))
+        self.world_grid.update(dt, self.player)
         self.check_collisions()
 
     def check_collisions(self):

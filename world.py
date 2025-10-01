@@ -88,9 +88,9 @@ class Area:
             y = self.world_y + random.randint(50, AREA_HEIGHT - 50)
 
             if random.random() < 0.7:
-                self.npcs.append(Spider(x, y))
+                self.npcs.append(Spider(x, y, self))
             else:
-                self.npcs.append(Droid(x, y))
+                self.npcs.append(Droid(x, y, self))
 
         for _ in range(random.randint(2, 5)):
             x = self.world_x + random.randint(25, AREA_WIDTH - 25)
@@ -123,11 +123,11 @@ class Area:
     def deactivate(self):
         self.is_active = False
 
-    def update(self, dt, player_pos):
+    def update(self, dt, player):
         if not self.is_active:
             return
         for npc in self.npcs:
-            npc.update(dt, player_pos)
+            npc.update(dt, player)
 
     def draw(self, surface, viewport):
         if not self.is_loaded:
@@ -202,9 +202,9 @@ class WorldGrid:
 
         self.active_areas = new_active_areas
 
-    def update(self, dt, player_pos):
+    def update(self, dt, player):
         for coord in self.active_areas:
-            self.areas[coord].update(dt, player_pos)
+            self.areas[coord].update(dt, player)
 
     def draw(self, surface, viewport):
         for area in self.areas.values():
