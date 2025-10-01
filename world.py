@@ -12,7 +12,7 @@ from settings import (
     ITEM_SIZE,
     NPC_SIZE,
 )
-from entities import NPC, Item
+from entities import Spider, Droid, Item
 
 
 class Area:
@@ -32,7 +32,11 @@ class Area:
         for _ in range(random.randint(5, 15)):
             x = self.world_x + random.randint(50, AREA_WIDTH - 50)
             y = self.world_y + random.randint(50, AREA_HEIGHT - 50)
-            self.npcs.append(NPC(x, y))
+
+            if random.random() < 0.7:
+                self.npcs.append(Spider(x, y))
+            else:
+                self.npcs.append(Droid(x, y))
 
         for _ in range(random.randint(2, 5)):
             x = self.world_x + random.randint(25, AREA_WIDTH - 25)
@@ -76,7 +80,9 @@ class Area:
         )
 
         for item in self.items:
-            if viewport.is_visible(item.x, item.y, ITEM_SIZE, ITEM_SIZE):
+            if viewport.is_visible(
+                item.rect.x, item.rect.y, item.rect.width, item.rect.height
+            ):
                 item.draw(screen, viewport)
 
         for npc in self.npcs:

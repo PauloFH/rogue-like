@@ -1,4 +1,3 @@
-# sprites.py
 import pygame
 
 

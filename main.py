@@ -14,7 +14,11 @@ from settings import (
     RED,
     YELLOW,
     AMMO_RADIUS,
+    HEALTH_RESTORE,
+    GRID_SIZE,
+    GRAY,
 )
+
 from camera import Viewport
 from world import WorldGrid
 from entities import Player
@@ -69,7 +73,9 @@ class Game:
             if not item.collected and player_rect.colliderect(item.get_rect()):
                 item.collected = True
                 if item.item_type == "health":
-                    self.player.health_items += 1
+                    self.player.health += HEALTH_RESTORE
+                    if self.player.health > self.player.max_health:
+                        self.player.health = self.player.max_health
                 elif item.item_type == "ammo":
                     self.player.ammo_items += 1
 
@@ -97,7 +103,7 @@ class Game:
         self.world_grid.draw(self.screen, self.viewport)
         self.player.draw(self.screen, self.viewport)
         self.draw_ammo_effect()
-
+        self.draw_minimap()
         self.draw_ui()
         pygame.display.flip()
 
@@ -113,9 +119,7 @@ class Game:
                 (AMMO_RADIUS * 2, AMMO_RADIUS * 2), pygame.SRCALPHA
             )
 
-            alpha = int(
-                150 * (self.ammo_effect["timer"] / 0.2)
-            )  # 150 é a opacidade inicial
+            alpha = int(150 * (self.ammo_effect["timer"] / 0.2))
             pygame.draw.circle(
                 surface, (*YELLOW, alpha), (AMMO_RADIUS, AMMO_RADIUS), AMMO_RADIUS
             )
@@ -165,6 +169,41 @@ class Game:
 
         pygame.quit()
         sys.exit()
+
+    def draw_minimap(self):
+        """Desenha um minimapa no canto superior direito da tela."""
+        cell_size = 20
+        padding = 4
+        border_size = 2
+        total_width = (GRID_SIZE * cell_size) + ((GRID_SIZE - 1) * padding)
+        total_height = (GRID_SIZE * cell_size) + ((GRID_SIZE - 1) * padding)
+        map_x = SCREEN_WIDTH - total_width - 10
+        map_y = 10
+        background_rect = pygame.Rect(
+            map_x - border_size,
+            map_y - border_size,
+            total_width + (border_size * 2),
+            total_height + (border_size * 2),
+        )
+        pygame.draw.rect(self.screen, BLACK, background_rect)
+        pygame.draw.rect(self.screen, WHITE, background_rect, 1)  # Borda branca
+        player_grid_x = int(self.player.x // AREA_WIDTH)
+        player_grid_y = int(self.player.y // AREA_HEIGHT)
+        player_area_coord = (player_grid_x, player_grid_y)
+        for gx in range(GRID_SIZE):
+            for gy in range(GRID_SIZE):
+                coord = (gx, gy)
+                if coord == player_area_coord:
+                    color = YELLOW
+                elif coord in self.world_grid.active_areas:
+                    color = GREEN
+                else:
+                    color = GRAY
+                rect_x = map_x + gx * (cell_size + padding)
+                rect_y = map_y + gy * (cell_size + padding)
+                pygame.draw.rect(
+                    self.screen, color, (rect_x, rect_y, cell_size, cell_size)
+                )
 
 
 if __name__ == "__main__":
