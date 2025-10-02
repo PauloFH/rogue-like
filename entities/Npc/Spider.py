@@ -1,6 +1,6 @@
 import pygame
 
-from entities.NPC import NPC
+from entities.Npc.NPC import NPC
 from sprites import SpriteSheet
 from settings import (
     NPC_HEALTH,

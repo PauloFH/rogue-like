@@ -1,9 +1,9 @@
 import math
 import random
 
-from entities.Droid import Droid
+from entities.Npc.Droid import Droid
 from entities.Item import Item
-from entities.Spider import Spider
+from entities.Npc.Spider import Spider
 from settings import (
     AREA_WIDTH,
     AREA_HEIGHT,

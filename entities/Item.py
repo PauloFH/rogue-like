@@ -29,7 +29,7 @@ class Item:
         if os.path.exists(path):
             img = pygame.image.load(path).convert_alpha()
             w, h = img.get_size()
-            return pygame.transform.scale(img, (w // 2, h // 2))
+            return pygame.transform.scale(img, (w, h))
         return self._make_fallback_surface(color)
 
     @staticmethod
